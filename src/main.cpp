@@ -5,69 +5,7 @@
 #include <vector>
 #include <map>
 
-uint8_t
-Clamp(uint8_t N, uint8_t Lower, uint8_t Upper)
-{
-    if(Lower > Upper) return N;
-
-    if(N < Lower) N = Lower;
-    if(N > Upper) N = Upper;
-
-    return N;
-}
-
-struct game
-{
-    // Bit-field: XXXX4321, where X is unused and 1-4 refer to the respective activated controller ports.    
-    static uint8_t ControllerField;
-    
-    const uint8_t GetControllerCount();
-    const uint8_t GetControllerOffset(uint8_t Port);
-};
-
-uint8_t game::ControllerField = 0;
-
-const uint8_t game::GetControllerCount()
-{
-    uint8_t Count =
-        ((ControllerField >> 0) & 0x1) +
-        ((ControllerField >> 1) & 0x1) +
-        ((ControllerField >> 2) & 0x1) +
-        ((ControllerField >> 3) & 0x1);
-
-    return Count;
-}    
-
-const uint8_t game::GetControllerOffset(uint8_t Port)
-{
-    uint8_t ControllerOffset = 0;
-    
-    for(int port = 0; port < 4; port++)
-    {
-        if(((ControllerField >> port) & 0x1) == 1)
-        {
-            ControllerOffset++;
-
-            if(port == Port) return ControllerOffset;
-        }
-    }
-
-    std::cout << "ERROR: Tried to get controller offset for empty port." << std::endl;
-    return 0;
-}
-
-game Game;
-
-struct trigger
-{
-    uint8_t Pressure = 0;
-};
-
-struct stick
-{
-    uint8_t HPosition = 128;
-    uint8_t VPosition = 128;
-};
+static const uint8_t MaxPorts{4};
 
 class raw_header_data
 {
@@ -76,7 +14,7 @@ private:
 public:
     const uint8_t* GetByteAddress(uint8_t Byte)
     {
-        Clamp(Byte, 0, 255);
+        // NOTE(tyler): 8-bit integer will automatically clamp to 0-255 means no segfault worries.
         return Data+Byte;
     }
 };
@@ -99,62 +37,75 @@ enum class button : uint8_t
 
 struct controller_state
 {
-    uint8_t Digitals[2];
-    uint8_t LPressure;
-    uint8_t RPressure;
-    uint8_t ControlStickX;
-    uint8_t ControlStickY;
-    uint8_t CStickX;
-    uint8_t CStickY;
+    uint16_t Buttons{0};
+    uint8_t LPressure{0};
+    uint8_t RPressure{0};
+    uint8_t ControlStickX{128};
+    uint8_t ControlStickY{128};
+    uint8_t CStickX{128};
+    uint8_t CStickY{128};
 };
 
-void SetButton(controller_state& ControllerState, button Button, bool Pressed)
+void SetButtonState(controller_state& ControllerState, button Button, bool ButtonState)
+{
+    ControllerState.Buttons &= ~(1 << (int)Button); // Clears the button's bit.
+    ControllerState.Buttons |= (ButtonState << (int)Button); // Sets the button's bit.
+}
+
+enum class port : uint8_t
+{
+    One = 0, // Port numbers aren't 0-based, but pointer arithmetic is.
+    Two,
+    Three,
+    Four,
+};
+
+struct input_state
+{
+    controller_state ControllerState;
+    port Port;
+    uint32_t Frame;
+
+    input_state(controller_state& ControllerState, port Port, uint32_t Frame);
+    
+    bool SetPort(uint8_t Port);
+};
+
+input_state::input_state(controller_state& ControllerState, port Port, uint32_t Frame)
+        :
+        ControllerState(ControllerState), Port(Port), Frame(Frame)
 {
     
 }
 
-struct input
+const uint8_t GetActivePortCount(uint8_t PortBitField)
 {
-    uint8_t Port;
+    uint8_t ActivePortCount = 0;
     
-    button Start;
-    button A;
-    button B;
-    button X;
-    button Y;
-    button Z;
-    button DPadUp;
-    button DPadDown;
-    button DPadLeft;
-    button DPadRight;
-    button DigitalL;
-    button DigitalR;
+    for(uint8_t port = 0; port < MaxPorts; port++)
+    {
+        ActivePortCount += (PortBitField >> port) & 1;
+    }
+    
+    return ActivePortCount;
+}
 
-    trigger L;
-    trigger R;
-
-    stick ControlStick;
-    stick CStick;
-
-    input(uint8_t Port) : Port(Port) {}
-};
-
-class routine
+const uint8_t GetControllerOffset(uint8_t PortBitField, port Port)
 {
-private:
-    uint32_t FrameCount = 0;
-    std::multimap<uint32_t, input> Inputs;
-public:
-    void Insert(input& Input, uint32_t Frame);
-    void WriteRoutineToFile(raw_header_data& Header, std::string FileName);
-};
+    uint8_t ControllerOffset = 0;
+    
+    for(int port = 0; port < MaxPorts; port++)
+    {
+        if(((PortBitField >> port) & 1) == 1)
+        {
+            if(port == static_cast<int>(Port)) return ControllerOffset;
+        }
+        
+        ControllerOffset++;
+    }
 
-void
-routine::Insert(input& Input, uint32_t Frame)
-{
-    Inputs.insert(std::pair<uint32_t, input>(Frame, Input));
-
-    if(Frame >= FrameCount) FrameCount = Frame + 1;
+    std::cout << "ERROR: Tried to get controller offset for empty port." << std::endl;
+    return 0;
 }
 
 void
@@ -183,96 +134,78 @@ int main()
     raw_header_data Header;
     LoadHeaderFromDTM("config.dtm", Header);
 
-    Game.ControllerField = *Header.GetByteAddress(0xB);
+    uint8_t PortBitField = *Header.GetByteAddress(0xB);
 
+    controller_state Shine;
+    SetButtonState(Shine, button::B, true);
+    Shine.ControlStickY = 0;
+
+    controller_state Jump;
+    SetButtonState(Jump, button::X, true);
+
+    controller_state WavelandDown;
+    SetButtonState(WavelandDown, button::L, true);
+    WavelandDown.ControlStickY = 0;
     
-//        *(RawHeader + 0xB);
+    controller_state WavelandRight;
+    SetButtonState(WavelandRight, button::L, true);
+    WavelandRight.ControlStickX = 255;
+    WavelandRight.ControlStickY = 0;
+
+    controller_state WavelandLeft;
+    SetButtonState(WavelandLeft, button::L, true);
+    WavelandLeft.ControlStickX = 0;
+    WavelandLeft.ControlStickY = 0;
     
-//    std::streampos size;
-//    uint8_t*
+    std::vector<input_state> Inputs;
 
-    routine MainRoutine;
-      
-    input Input0(0);
-    Input0.CStick.HPosition = 1;
-
-    input Input1(1);
-    Input1.CStick.HPosition = 255;
-
-    input Input2(2);
-    Input2.CStick.VPosition = 1;
-
-    input Input3(3);
-    Input3.CStick.VPosition = 255;
-
-    MainRoutine.Insert(Input0, 60);
-    MainRoutine.Insert(Input1, 0);
-    MainRoutine.Insert(Input2, 0);
-    MainRoutine.Insert(Input3, 0);
+    int WSF = 16;
     
-//    void* Memory;
-//    MainRoutine.WriteRoutineToFile(Header, "Routine.dtm");      
-
-/*
-        std::ofstream RoutineFile("Routine.dtm", std::ios::out|std::ios::binary);
-    if(RoutineFile.is_open())
+    for(uint32_t i = 0; i < WSF*10*2; i += WSF*2)
     {
-
-//        std::vector<void>
-//        uint8_t* ControllerData = Memory + 256; // Controller data is offset 256 bytes from beginning of file.
+        Inputs.push_back({Shine, port::One, i});
+        Inputs.push_back({Jump, port::One, i+3});
+        Inputs.push_back({WavelandRight, port::One, i+6});
         
-//        RoutineFile.write((char*)ControllerData, 
+        Inputs.push_back({Shine, port::One, WSF+i});
+        Inputs.push_back({Jump, port::One, WSF+i+3});
+        Inputs.push_back({WavelandLeft, port::One, WSF+i+6});
+        
     }
-    else
+//    Inputs.push_back({Shine, port::Two, 120});
+//    Inputs.push_back({Shine, port::Three, 240});
+//    Inputs.push_back({Shine, port::Four, 240});
+
+    uint32_t LastFrame{};
+
+    // NOTE(tyler): Find out how many frames our memory block needs to be.
+    for(const input_state& inputState : Inputs)
     {
-        std::cout << "ERROR: Failed to open routine.dtm for reading." << std::endl;
-        }*/
-            /*
-    std::ifstream infile("FD4Foxes.dtm", std::ios::in|std::ios::binary|std::ios::ate);
-    if (infile.is_open())
-    {
-        size = infile.tellg();
-        Memory = new uint8_t[size];
-        infile.seekg (0, std::ios::beg);
-        infile.read ((char*)Memory, size);
-        infile.close();
-
-        std::cout << "the entire file content is in memory";
-
-
-        
-
-
-        controller C0(0);
-        C0.CStick.HPosition = 1;
-
-        controller C1(1);
-        C1.CStick.HPosition = 255;
-
-        controller C2(2);
-        C2.CStick.VPosition = 1;
-
-        controller C3(3);
-        C3.CStick.VPosition = 255;
-
-        WriteControllerToFrame(C0, ControllerData, 0);
-        WriteControllerToFrame(C1, ControllerData, 0);
-        WriteControllerToFrame(C2, ControllerData, 0);
-        WriteControllerToFrame(C3, ControllerData, 0);
-
-        std::ofstream outfile("NewFile.dtm", std::ios::out|std::ios::binary|std::ios::trunc);
-
-        outfile.write((char*)Memory, size);
-
-        outfile.close();
-        
-        delete[] Memory;
+        if(inputState.Frame > LastFrame) LastFrame = inputState.Frame;
+        // TODO(tyler): For some reason, the next line adds 2 padding frames instead of 1.
+        LastFrame++; // Dolphin seems to need at least 1 padding frame at the end or it won't execute actions on the last frame.
     }
-    else std::cout << "Unable to open file";
-            */
-    // std::cout << sizeof(raw_controller_data) << std::endl;
 
-    std::cout << sizeof(controller_state) << std::endl;
+    uint32_t FrameCount = LastFrame + 1;
+
+    controller_state* InputData = new controller_state[GetActivePortCount(PortBitField) * FrameCount]{};
+
+    for(const input_state& inputState : Inputs)
+    {
+        memcpy(InputData + inputState.Frame * GetActivePortCount(PortBitField) + GetControllerOffset(PortBitField, inputState.Port),
+               &inputState.ControllerState,
+               sizeof(controller_state));
+    }
+
+    std::ofstream OutFile("NewFile.dtm", std::ios::out|std::ios::binary|std::ios::trunc);
+
+    OutFile.write((char*)(Header.GetByteAddress(0)), 256);
+    // TODO(tyler): This is potentially unsafe if PortBitField or FrameCount somehow gets changed.
+    OutFile.write((char*)(InputData), GetActivePortCount(PortBitField) * FrameCount * sizeof(controller_state));
+
+    OutFile.close();
+
+    delete InputData;
     
     return 0;
 }
