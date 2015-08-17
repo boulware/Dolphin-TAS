@@ -7,7 +7,7 @@
 
 static const uint8_t MaxPorts{4};
 
-class raw_header_data
+class dtm_header
 {
 private:
     uint8_t Data[256];
@@ -99,7 +99,7 @@ const uint8_t GetControllerOffset(uint8_t PortBitField, port Port)
 }
 
 void
-LoadHeaderFromDTM(std::string FileName, raw_header_data& Destination)
+LoadDTMHeader(std::string FileName, dtm_header& Destination)
 {
     std::ifstream ConfigFile("config.dtm", std::ios::in|std::ios::binary|std::ios::ate);
     if(ConfigFile.is_open())
@@ -121,8 +121,8 @@ LoadHeaderFromDTM(std::string FileName, raw_header_data& Destination)
 
 int main()
 { 
-    raw_header_data Header;
-    LoadHeaderFromDTM("config.dtm", Header);
+    dtm_header Header;
+    LoadDTMHeader("config.dtm", Header);
 
     uint8_t PortBitField = *Header.GetByteAddress(0xB);
 
