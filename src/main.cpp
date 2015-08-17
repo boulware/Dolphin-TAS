@@ -19,38 +19,28 @@ public:
     }
 };
 
-enum class button : uint8_t
-{
-    Start = 0,
-    A,
-    B,
-    X,
-    Y,
-    Z,
-    Up,
-    Down,
-    Left,
-    Right,
-    L,
-    R,
-};
-
 struct controller_state
 {
-    uint16_t Buttons{0};
+    bool Start:1, A:1, B:1, X:1, Y:1, Z:1;
+    bool DPadUp:1, DPadDown:1, DPadLeft:1, DPadRight:1;
+    bool L:1, R:1;
+    bool disc:1;
+    bool reset:1;
+    bool reserved:2;
+
     uint8_t LPressure{0};
     uint8_t RPressure{0};
     uint8_t ControlStickX{128};
     uint8_t ControlStickY{128};
     uint8_t CStickX{128};
     uint8_t CStickY{128};
-};
 
-void SetButtonState(controller_state& ControllerState, button Button, bool ButtonState)
-{
-    ControllerState.Buttons &= ~(1 << (int)Button); // Clears the button's bit.
-    ControllerState.Buttons |= (ButtonState << (int)Button); // Sets the button's bit.
-}
+    controller_state()
+    {
+        // Zero-intialize the two bytes of bitfields.
+        memset(this, 0, 2);
+    }
+};
 
 enum class port : uint8_t
 {
@@ -130,51 +120,54 @@ LoadHeaderFromDTM(std::string FileName, raw_header_data& Destination)
 }
 
 int main()
-{
+{ 
     raw_header_data Header;
     LoadHeaderFromDTM("config.dtm", Header);
 
     uint8_t PortBitField = *Header.GetByteAddress(0xB);
 
     controller_state Shine;
-    SetButtonState(Shine, button::B, true);
+    Shine.B = true;
     Shine.ControlStickY = 0;
 
+    controller_state Down;
+    Down.DPadDown = true;
+
     controller_state Jump;
-    SetButtonState(Jump, button::X, true);
+    Jump.X = true;
 
     controller_state WavelandDown;
-    SetButtonState(WavelandDown, button::L, true);
+    WavelandDown.L = true;
     WavelandDown.ControlStickY = 0;
     
     controller_state WavelandRight;
-    SetButtonState(WavelandRight, button::L, true);
+    WavelandRight.L = true;
     WavelandRight.ControlStickX = 255;
     WavelandRight.ControlStickY = 0;
 
     controller_state WavelandLeft;
-    SetButtonState(WavelandLeft, button::L, true);
+    WavelandLeft.L = true;
     WavelandLeft.ControlStickX = 0;
     WavelandLeft.ControlStickY = 0;
     
     std::vector<input_state> Inputs;
 
     int WSF = 16;
-    
-    for(uint32_t i = 0; i < WSF*10*2; i += WSF*2)
+
+    for(port p = port::One; p != port::Four; ++p)
     {
-        Inputs.push_back({Shine, port::One, i});
-        Inputs.push_back({Jump, port::One, i+3});
-        Inputs.push_back({WavelandRight, port::One, i+6});
+        for(uint32_t i = 0; i < WSF*10*2; i += WSF*2)
+        {
+            Inputs.push_back({Shine, port::One, i});
+            Inputs.push_back({Jump, port::One, i+3});
+            Inputs.push_back({WavelandRight, port::One, i+6});
         
-        Inputs.push_back({Shine, port::One, WSF+i});
-        Inputs.push_back({Jump, port::One, WSF+i+3});
-        Inputs.push_back({WavelandLeft, port::One, WSF+i+6});
+            Inputs.push_back({Shine, port::One, WSF+i});
+            Inputs.push_back({Jump, port::One, WSF+i+3});
+            Inputs.push_back({WavelandLeft, port::One, WSF+i+6});
         
+        }
     }
-//    Inputs.push_back({Shine, port::Two, 120});
-//    Inputs.push_back({Shine, port::Three, 240});
-//    Inputs.push_back({Shine, port::Four, 240});
 
     uint32_t LastFrame{};
 
