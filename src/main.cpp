@@ -126,48 +126,7 @@ int main()
 
     uint8_t PortBitField = *Header.GetByteAddress(0xB);
 
-    controller_state Shine;
-    Shine.B = true;
-    Shine.ControlStickY = 0;
-
-    controller_state Down;
-    Down.DPadDown = true;
-
-    controller_state Jump;
-    Jump.X = true;
-
-    controller_state WavelandDown;
-    WavelandDown.L = true;
-    WavelandDown.ControlStickY = 0;
-    
-    controller_state WavelandRight;
-    WavelandRight.L = true;
-    WavelandRight.ControlStickX = 255;
-    WavelandRight.ControlStickY = 0;
-
-    controller_state WavelandLeft;
-    WavelandLeft.L = true;
-    WavelandLeft.ControlStickX = 0;
-    WavelandLeft.ControlStickY = 0;
-    
     std::vector<input_state> Inputs;
-
-    int WSF = 16;
-
-    for(port p = port::One; p != port::Four; ++p)
-    {
-        for(uint32_t i = 0; i < WSF*10*2; i += WSF*2)
-        {
-            Inputs.push_back({Shine, port::One, i});
-            Inputs.push_back({Jump, port::One, i+3});
-            Inputs.push_back({WavelandRight, port::One, i+6});
-        
-            Inputs.push_back({Shine, port::One, WSF+i});
-            Inputs.push_back({Jump, port::One, WSF+i+3});
-            Inputs.push_back({WavelandLeft, port::One, WSF+i+6});
-        
-        }
-    }
 
     uint32_t LastFrame{};
 
