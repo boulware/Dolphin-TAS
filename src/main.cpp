@@ -134,9 +134,9 @@ int main()
     for(const input_state& inputState : Inputs)
     {
         if(inputState.Frame > LastFrame) LastFrame = inputState.Frame;
-        // TODO(tyler): For some reason, the next line adds 2 padding frames instead of 1.
-        LastFrame++; // Dolphin seems to need at least 1 padding frame at the end or it won't execute actions on the last frame.
     }
+   
+    LastFrame++; // Dolphin seems to need at least 1 padding frame at the end or it won't execute actions on the last frame.
 
     uint32_t FrameCount = LastFrame + 1;
 
